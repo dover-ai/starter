@@ -1,5 +1,10 @@
 # DoverAI Starter
 
+[![CI](https://github.com/dover-ai/starter/actions/workflows/ci.yml/badge.svg)](https://github.com/dover-ai/starter/actions/workflows/ci.yml)
+[![Покрытие](https://img.shields.io/badge/%D0%BF%D0%BE%D0%BA%D1%80%D1%8B%D1%82%D0%B8%D0%B5-96%25-1E9E5A)](#паспорт-качества)
+[![Python](https://img.shields.io/badge/python-3.12%2B-1F3F66)](pyproject.toml)
+[![Лицензия](https://img.shields.io/badge/%D0%BB%D0%B8%D1%86%D0%B5%D0%BD%D0%B7%D0%B8%D1%8F-MIT-1F3F66)](LICENSE)
+
 Стартовый шаблон production-сервиса на FastAPI. Собран так, как мы отдаём проекты клиентам:
 не «работает на демо», а готово к эксплуатации.
 
