@@ -38,10 +38,41 @@ jobs:
           echo "### Покрытие тестами" >> "$GITHUB_STEP_SUMMARY"
           pytest --cov=app --cov-report=term | tail -n 20 >> "$GITHUB_STEP_SUMMARY"
 
-  docker:
-    name: Сборка образа
+  security:
+    name: Зависимости и секреты
     runs-on: ubuntu-latest
-    needs: quality
+
+    steps:
+      # Полная история нужна, чтобы искать секреты в прошлых коммитах,
+      # а не только в текущем состоянии файлов.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Установка зависимостей
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "." pip-audit
+
+      - name: Известные уязвимости в зависимостях
+        run: pip-audit --progress-spinner off
+
+      - name: Поиск секретов в коде и истории
+        # Запуск через образ, а не через действие из каталога: так шаг
+        # переносится на любой сервер с поддержкой этого синтаксиса.
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest \
+            detect --source=/repo --redact --verbose
+
+  docker:
+    name: Сборка и сканирование образа
+    runs-on: ubuntu-latest
+    needs: [quality, security]
 
     steps:
       - uses: actions/checkout@v7
@@ -62,3 +93,27 @@ jobs:
             sleep 2
           done
           echo "Сервис не поднялся"; docker logs smoke; exit 1
+
+      - name: Уязвимости в образе (блокирующая проверка)
+        # Падает только на том, что мы способны закрыть: --ignore-unfixed
+        # отсекает уязвимости базового образа, для которых исправлений ещё нет.
+        # Без этого шаг падал бы всегда, а всегда падающую проверку отключают.
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:latest image \
+            --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed --no-progress \
+            doverai-starter:${{ github.sha }}
+
+      - name: Полная картина по образу (в отчёт, без блокировки)
+        # Отдельный шаг, потому что предыдущий намеренно скрывает неустранимое.
+        # Скрывать от конвейера — нормально, скрывать от людей — нет:
+        # состав неустранимых уязвимостей нужно видеть при выборе базового образа.
+        if: always()
+        run: |
+          echo "### Уязвимости образа, включая неустранимые" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:latest image \
+            --severity HIGH,CRITICAL --no-progress --format table \
+            doverai-starter:${{ github.sha }} 2>/dev/null | head -n 40 >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
