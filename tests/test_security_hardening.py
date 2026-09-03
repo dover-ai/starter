@@ -80,6 +80,45 @@ def test_login_answers_identically_for_unknown_and_wrong_password(client, user_c
     assert wrong_password.json() == unknown_user.json()
 
 
+def test_email_case_does_not_create_second_account(client):
+    """Адрес в другом регистре — тот же пользователь, а не двойник.
+
+    Находка независимой проверки 03.09.2026: `carol@example.com` и
+    `CAROL@example.com` заводились как две учётные записи.
+    """
+    first = client.post(
+        "/auth/register", json={"email": "carol@example.com", "password": "password-carol"}
+    )
+    second = client.post(
+        "/auth/register", json={"email": "CAROL@example.com", "password": "other-password"}
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 409, "адрес в другом регистре создал вторую учётную запись"
+
+
+def test_login_accepts_any_case_of_registered_email(client):
+    """Владелец входит, набрав свой адрес в любом регистре."""
+    client.post("/auth/register", json={"email": "dave@example.com", "password": "password-dave"})
+
+    response = client.post(
+        "/auth/token", data={"username": "Dave@Example.COM", "password": "password-dave"}
+    )
+
+    assert response.status_code == 200
+    assert "access_token" in response.json()
+
+
+def test_email_stored_normalized(client):
+    """В ответе и в базе адрес хранится в приведённом виде."""
+    response = client.post(
+        "/auth/register", json={"email": "  Erin@Example.com  ", "password": "password-erin"}
+    )
+
+    assert response.status_code == 201
+    assert response.json()["email"] == "erin@example.com"
+
+
 def test_security_headers_present(client):
     """Заголовки, ограничивающие поведение браузера, отдаются на каждом ответе."""
     response = client.get("/health/live")

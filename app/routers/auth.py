@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from app.deps import CurrentUser, DbSession
 from app.models import User
-from app.schemas import Token, UserCreate, UserRead
+from app.schemas import Token, UserCreate, UserRead, normalize_email
 from app.security import create_access_token, hash_password, verify_password_or_equalize
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -35,7 +35,9 @@ def login(
     form: Annotated[OAuth2PasswordRequestForm, Depends()],
     db: DbSession,
 ) -> Token:
-    user = db.scalar(select(User).where(User.email == form.username))
+    # Адрес нормализуется так же, как при регистрации, иначе владелец не войдёт,
+    # набрав его в другом регистре.
+    user = db.scalar(select(User).where(User.email == normalize_email(form.username)))
 
     # Проверка пароля выполняется всегда, даже когда пользователь не найден:
     # иначе адрес выдаёт себя временем ответа (bcrypt против мгновенного отказа).

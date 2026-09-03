@@ -6,12 +6,29 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+
+def normalize_email(value: str) -> str:
+    """Приводит адрес к единому виду.
+
+    Формально локальная часть адреса регистрозависима (RFC 5321 §2.4), но на
+    практике почтовые системы её регистр игнорируют. Если хранить адреса как
+    введено, `user@example.com` и `USER@example.com` становятся разными
+    учётными записями: появляется двойник существующего адреса, а владелец
+    не может войти, набрав свой адрес в другом регистре.
+    """
+    return value.strip().lower()
 
 
 class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def _normalize(cls, value: str) -> str:
+        return normalize_email(value)
 
 
 class UserRead(BaseModel):
