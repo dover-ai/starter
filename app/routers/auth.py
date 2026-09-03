@@ -9,7 +9,7 @@ from sqlalchemy import select
 from app.deps import CurrentUser, DbSession
 from app.models import User
 from app.schemas import Token, UserCreate, UserRead
-from app.security import create_access_token, hash_password, verify_password
+from app.security import create_access_token, hash_password, verify_password_or_equalize
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -37,9 +37,15 @@ def login(
 ) -> Token:
     user = db.scalar(select(User).where(User.email == form.username))
 
+    # Проверка пароля выполняется всегда, даже когда пользователь не найден:
+    # иначе адрес выдаёт себя временем ответа (bcrypt против мгновенного отказа).
+    password_ok = verify_password_or_equalize(
+        form.password, user.password_hash if user is not None else None
+    )
+
     # Один и тот же ответ и для несуществующего пользователя, и для неверного пароля:
     # иначе по коду ответа можно перебирать существующие адреса.
-    if user is None or not verify_password(form.password, user.password_hash) or not user.is_active:
+    if user is None or not password_ok or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Неверный адрес или пароль",

@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.routers import auth, health, items
+from app.security import warm_placeholder_hash
 
 logging.basicConfig(
     level=logging.INFO,
@@ -22,6 +23,9 @@ logger = logging.getLogger("app")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
+    # Заглушка для выравнивания времени считается заранее: иначе первый запрос
+    # с незнакомым адресом отработает вдвое дольше обычного и будет выделяться.
+    warm_placeholder_hash()
     logger.info("Запуск %s в окружении %s", settings.app_name, settings.environment)
     yield
     logger.info("Остановка приложения")
@@ -47,6 +51,31 @@ if settings.cors_origin_list:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+
+@app.middleware("http")
+async def add_security_headers(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """Заголовки, ограничивающие поведение браузера при работе с ответами API."""
+    response = await call_next(request)
+
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+
+    if settings.is_production:
+        # HSTS имеет смысл только поверх HTTPS, который терминируется на прокси.
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+        )
+        # Строгая политика применима, потому что в production документация закрыта:
+        # своего интерфейса, которому нужны скрипты и стили, у сервиса нет.
+        response.headers.setdefault(
+            "Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'"
+        )
+
+    return response
 
 
 @app.middleware("http")

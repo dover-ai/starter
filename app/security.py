@@ -1,6 +1,7 @@
 """Хеширование паролей и работа с JWT."""
 
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
 
 import bcrypt
 import jwt
@@ -22,6 +23,30 @@ def verify_password(password: str, password_hash: str) -> bool:
     except ValueError:
         # Некорректный хеш в базе не должен ронять приложение.
         return False
+
+
+@lru_cache(maxsize=1)
+def warm_placeholder_hash() -> str:
+    """Хеш-заглушка для выравнивания времени. Считается один раз за процесс.
+
+    Вызывается при старте приложения, чтобы первый запрос с незнакомым адресом
+    не отличался по времени от последующих.
+    """
+    return hash_password("timing-equalization-placeholder")
+
+
+def verify_password_or_equalize(password: str, password_hash: str | None) -> bool:
+    """Проверка пароля, не выдающая существование учётной записи временем ответа.
+
+    Если хеша нет — пользователь не найден — проверка всё равно выполняется,
+    против заглушки. Без этого ответ возвращается мгновенно, а для существующего
+    адреса тратится время bcrypt: разница в десятки раз позволяет перебором
+    определить, какие адреса зарегистрированы.
+    """
+    if password_hash is None:
+        verify_password(password, warm_placeholder_hash())
+        return False
+    return verify_password(password, password_hash)
 
 
 def create_access_token(subject: str, ttl: timedelta | None = None) -> str:
